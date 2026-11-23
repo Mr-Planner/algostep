@@ -58,7 +58,8 @@ public class JdiTrace {
     try { for(LocalVariable v:frame.visibleVariables())if(vars.size()<40)vars.put(v.name(),value(frame.getValue(v),0)); } catch(AbsentInformationException ignored) {}
     List<String> fields=new ArrayList<>();for(var e:vars.entrySet())fields.add(quote(e.getKey())+":"+e.getValue());
     List<String> stack=new ArrayList<>();for(StackFrame f:thread.frames())if(f.location().declaringType().name().startsWith("Main")&&stack.size()<32)stack.add(quote(f.location().method().name()));
-    return "{\"line\":"+Math.max(1,frame.location().lineNumber())+",\"event\":\"line\",\"locals\":{"+String.join(",",fields)+"},\"stack\":["+String.join(",",stack)+"]}";
+    int line = frame.location().lineNumber();
+    return "{\"line\":"+(line > 0 ? Integer.toString(line) : "null")+",\"event\":\"line\",\"locals\":{"+String.join(",",fields)+"},\"stack\":["+String.join(",",stack)+"]}";
   }
   public static void main(String[] args) throws Exception {
     List<String> steps=new ArrayList<>();VirtualMachine vm=null;boolean truncated=false;

@@ -427,12 +427,22 @@ test("worker result contract renders actual supplied trace and strict outputs", 
       data: { problemId: "bfs-v1", language: "java" },
     })
   ).json();
+  const problems = (await (await page.request.get("/api/problems")).json())
+    .problems;
+  const source = problems.find(
+    (problem: any) => problem.id === record.problem_id,
+  ).references_code.java;
+  const saved = await page.request.patch(`/api/records/${record.id}`, {
+    headers,
+    data: { source, language: "java", revision: record.revision },
+  });
+  expect(saved.ok()).toBe(true);
   const execution = await (
     await page.request.post(`/api/records/${record.id}/executions`, {
       headers,
       data: {
         requestKey: "browser-worker-contract",
-        revision: 0,
+        revision: (await saved.json()).revision,
         mode: "judge",
       },
     })
@@ -511,6 +521,20 @@ test("worker result contract renders actual supplied trace and strict outputs", 
               peakMemoryBytes: 1048576,
               trace,
             },
+            {
+              input: "0",
+              expected: "",
+              actual: "",
+              stderr: "",
+              verdict: "AC",
+              elapsedMs: 1,
+              peakMemoryBytes: 1,
+              traceTruncated: true,
+              trace: [
+                { line: 8, event: "line", locals: {}, stack: [] },
+                { line: 0, event: "exception", locals: {}, stack: [] },
+              ],
+            },
           ],
         },
       },
@@ -527,8 +551,59 @@ test("worker result contract renders actual supplied trace and strict outputs", 
   await expect(
     page.getByRole("img", { name: "그래프의 현재 방문 상태" }),
   ).toBeVisible();
+  const marker = page.locator(".monaco-editor .trace-execution-marker");
+  async function expectLine(line: number) {
+    await expect(
+      page.getByText(`${line}번째 줄 · 실행 직전`, { exact: true }),
+    ).toBeVisible();
+    const number = page
+      .locator(".monaco-editor .line-numbers")
+      .filter({ hasText: new RegExp(`^${line}$`) });
+    await expect(marker).toHaveCount(1);
+    await expect
+      .poll(async () => {
+        const a = await marker.boundingBox();
+        const b = await number.boundingBox();
+        return a && b ? Math.abs(a.y - b.y) : null;
+      })
+      .toBeLessThan(2);
+  }
+  await expectLine(8);
   await page.getByRole("button", { name: "다음 단계", exact: true }).click();
   await expect(page.getByText("2 / 2 단계")).toBeVisible();
+  await expectLine(9);
+  const chooseTest = page.getByLabel("표시할 테스트");
+  await chooseTest.selectOption("1");
+  await expect(page.getByText("1 / 2 단계")).toBeVisible();
+  await expect(marker).toHaveCount(1);
+  await page.getByRole("button", { name: "재생", exact: true }).click();
+  await expect(
+    page.getByText(/줄 위치를 확인할 수 없어요 · 예외 발생 시점/),
+  ).toBeVisible();
+  await expect(marker).toHaveCount(0);
+  await chooseTest.selectOption("0");
+  await expectLine(8);
+  await page.getByRole("slider", { name: "실행 단계" }).focus();
+  await page.keyboard.press("End");
+  await expectLine(9);
+
+  await page.getByRole("button", { name: "이전 단계", exact: true }).click();
+  await expectLine(8);
+  await page
+    .locator(".editor-panel .monaco-editor")
+    .click({ position: { x: 150, y: 90 } });
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Enter");
+  await expect(marker).toHaveCount(0);
+  await expect(page.getByText(/실행 후 코드가 변경됐어요/)).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expectLine(8);
+  await page.getByRole("button", { name: "Python 3.10" }).click();
+  await expect(marker).toHaveCount(0);
+  await expect(page.getByText(/실행 후 코드가 변경됐어요/)).toBeVisible();
+  await page.getByRole("button", { name: "Java 21" }).click();
+  await expectLine(8);
+
   await expect(
     page.getByRole("img", { name: "객체 필드와 참조 관계" }),
   ).toBeVisible();

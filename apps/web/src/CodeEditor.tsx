@@ -1,4 +1,5 @@
-import { Editor, loader } from "@monaco-editor/react";
+import { useLayoutEffect, useState } from "react";
+import { Editor, loader, type EditorProps } from "@monaco-editor/react";
 import * as monaco from "monaco-editor/editor/editor.api.js";
 import "monaco-editor/languages/definitions/python/register.js";
 import "monaco-editor/languages/definitions/cpp/register.js";
@@ -28,4 +29,35 @@ monaco.editor.defineTheme("algostep-dark", {
     "editorLineNumber.foreground": "#a8b5cf",
   },
 });
-export default Editor;
+export default function CodeEditor({
+  executionLine,
+  ...props
+}: Omit<EditorProps, "onMount"> & { executionLine: number | null }) {
+  const [editor, setEditor] = useState<monaco.editor.IStandaloneCodeEditor>();
+  useLayoutEffect(() => {
+    const model = editor?.getModel();
+    if (
+      !editor ||
+      !model ||
+      executionLine === null ||
+      executionLine > model.getLineCount()
+    )
+      return;
+    const mark = editor.createDecorationsCollection([
+      {
+        range: new monaco.Range(executionLine, 1, executionLine, 1),
+        options: {
+          isWholeLine: true,
+          className: "trace-execution-line",
+          firstLineDecorationClassName: "trace-execution-marker",
+        },
+      },
+    ]);
+    editor.revealLineInCenterIfOutsideViewport(
+      executionLine,
+      monaco.editor.ScrollType.Immediate,
+    );
+    return () => mark.clear();
+  }, [editor, executionLine]);
+  return <Editor {...props} onMount={(instance) => setEditor(instance)} />;
+}

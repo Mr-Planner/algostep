@@ -2275,3 +2275,18 @@ body:has(.mobile-navigation) footer {
   overflow-wrap: anywhere;
   padding: 10px;
 }
+
+.monaco-editor .trace-execution-line {
+  background: rgba(0, 135, 99, 0.16);
+}
+.monaco-editor .trace-execution-marker::before {
+  content: "▶";
+  color: #00654f;
+  font-size: 11px;
+}
+[data-theme="dark"] .monaco-editor .trace-execution-line {
+  background: rgba(71, 216, 170, 0.22);
+}
+[data-theme="dark"] .monaco-editor .trace-execution-marker::before {
+  color: #8bf1c9;
+}

@@ -20,7 +20,15 @@ import {
   groupLearningTopics,
   learningCategory,
 } from "./learning-categories.js";
-import React, { useState, useEffect, useRef, Suspense, lazy } from "react";
+import React, {
+  useCallback,
+  useMemo,
+  useState,
+  useEffect,
+  useRef,
+  Suspense,
+  lazy,
+} from "react";
 import { createRoot } from "react-dom/client";
 import {
   BookOpen,
@@ -45,6 +53,7 @@ import {
   uploadDrive,
 } from "./api.js";
 import { TraceViewer, LessonDiagram } from "./visualization.js";
+import { useTraceSource } from "./useTraceSource.js";
 import "./style.css";
 const Editor = lazy(() => import("./CodeEditor.js"));
 const labels: any = { python: "Python 3.10", cpp: "C++20", java: "Java 21" };
@@ -85,6 +94,7 @@ function App() {
     lastSaved = useRef({ source: "", language: "python" }),
     runKey = useRef<string | null>(null),
     reviewKey = useRef<string | null>(null);
+  const pollVersion = useRef(0);
   const shownExecutionErrors = useRef(new Set<string>());
   const setTab = (next: string) => {
     setTabState(next);
@@ -516,9 +526,15 @@ function App() {
   }, []);
   useEffect(() => {
     if (!record?.id || !user || error || page !== "workspace") return;
+    let active = true;
+    let inFlight = false;
     const timer = setInterval(async () => {
+      if (inFlight) return;
+      inFlight = true;
+      const version = pollVersion.current;
       try {
         const fresh = await api(`/records/${record.id}`);
+        if (!active || version !== pollVersion.current) return;
         if (
           fresh.execution?.status === "FAILED" &&
           !shownExecutionErrors.current.has(fresh.execution.id)
@@ -549,14 +565,20 @@ function App() {
         if (usage && fresh.reviews?.some((r: any) => r.status === "SUCCEEDED"))
           setUsage(await api("/review-usage"));
       } catch (e) {
+        if (!active || version !== pollVersion.current) return;
         if (
           e instanceof ApiError &&
           (e.status === 401 || e.code === "NETWORK_ERROR")
         )
           fail(e);
+      } finally {
+        inFlight = false;
       }
     }, 2200);
-    return () => clearInterval(timer);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, [record?.id, user, error, page]);
   const openRecord = async (id: string) => {
     await save();
@@ -576,6 +598,7 @@ function App() {
     setBusy(true);
     try {
       const r = await save();
+      if (!r) return;
       runKey.current ??= crypto.randomUUID();
       const execution = await post(`/records/${r.id}/executions`, {
         requestKey: runKey.current,
@@ -583,8 +606,10 @@ function App() {
         mode,
         input,
       });
+      if (recordRef.current?.id !== r.id) return;
+      pollVersion.current++;
       runKey.current = null;
-      setRecord((old: any) => ({ ...old, execution }));
+      setRecord((old: any) => (old?.id === r.id ? { ...old, execution } : old));
       setTestIndex(0);
       setTab("visual");
     } catch (e) {
@@ -656,6 +681,29 @@ function App() {
   };
   const problem = problems.find((p) => p.id === record?.problem_id),
     selectedTest = record?.execution?.result?.tests?.[testIndex];
+  const execution = record?.execution;
+  const traceKey = `${record?.id}:${execution?.id}:${testIndex}`;
+  const [position, setPosition] = useState({ key: traceKey, step: 0 });
+  if (position.key !== traceKey) setPosition({ key: traceKey, step: 0 });
+  const step = position.key === traceKey ? position.step : 0;
+  const selectStep = useCallback(
+    (step: number) => setPosition({ key: traceKey, step }),
+    [traceKey],
+  );
+  const sourceStatus = useTraceSource(
+    source,
+    language,
+    execution?.snapshot_source_hash,
+    execution?.snapshot_language,
+  );
+  const lineCount = useMemo(() => source.split(/\r\n|\r|\n/).length, [source]);
+  const frameLine = selectedTest?.trace?.[step]?.line;
+  const line =
+    Number.isInteger(frameLine) &&
+    frameLine >= 1 &&
+    (sourceStatus !== "match" || frameLine <= lineCount)
+      ? frameLine
+      : null;
   const errorTitle =
     error?.code === "NETWORK_ERROR"
       ? "연결이 잠시 끊겼어요"
@@ -1468,6 +1516,7 @@ function App() {
                   }
                 >
                   <Editor
+                    executionLine={sourceStatus === "match" ? line : null}
                     height="392px"
                     language={language === "cpp" ? "cpp" : language}
                     value={source}
@@ -1592,6 +1641,11 @@ function App() {
                   {
                     <>
                       <TraceViewer
+                        key={traceKey}
+                        step={step}
+                        setStep={selectStep}
+                        line={line}
+                        sourceStatus={sourceStatus}
                         trace={selectedTest?.trace ?? []}
                         topic={problem.topic_id}
                         truncated={selectedTest?.traceTruncated}
