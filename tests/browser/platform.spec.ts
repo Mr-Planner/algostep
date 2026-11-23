@@ -521,6 +521,20 @@ test("worker result contract renders actual supplied trace and strict outputs", 
               peakMemoryBytes: 1048576,
               trace,
             },
+            {
+              input: "0",
+              expected: "",
+              actual: "",
+              stderr: "",
+              verdict: "AC",
+              elapsedMs: 1,
+              peakMemoryBytes: 1,
+              traceTruncated: true,
+              trace: [
+                { line: 8, event: "line", locals: {}, stack: [] },
+                { line: 0, event: "exception", locals: {}, stack: [] },
+              ],
+            },
           ],
         },
       },
@@ -558,7 +572,29 @@ test("worker result contract renders actual supplied trace and strict outputs", 
   await page.getByRole("button", { name: "다음 단계", exact: true }).click();
   await expect(page.getByText("2 / 2 단계")).toBeVisible();
   await expectLine(9);
+  const chooseTest = page.getByLabel("표시할 테스트");
+  await chooseTest.selectOption("1");
+  await expect(page.getByText("1 / 2 단계")).toBeVisible();
+  await expect(marker).toHaveCount(1);
+  await page.getByRole("button", { name: "재생", exact: true }).click();
+  await expect(
+    page.getByText(/줄 위치를 확인할 수 없어요 · 예외 발생 시점/),
+  ).toBeVisible();
+  await expect(marker).toHaveCount(0);
+  await chooseTest.selectOption("0");
+  await expectLine(8);
+  await page.getByRole("slider", { name: "실행 단계" }).focus();
+  await page.keyboard.press("End");
+  await expectLine(9);
+
   await page.getByRole("button", { name: "이전 단계", exact: true }).click();
+  await expectLine(8);
+  await page.locator(".monaco-editor .view-line").first().click();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Enter");
+  await expect(marker).toHaveCount(0);
+  await expect(page.getByText(/실행 후 코드가 변경됐어요/)).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+z");
   await expectLine(8);
   await page.getByRole("button", { name: "Python 3.10" }).click();
   await expect(marker).toHaveCount(0);

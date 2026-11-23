@@ -527,8 +527,11 @@ function App() {
   useEffect(() => {
     if (!record?.id || !user || error || page !== "workspace") return;
     let active = true;
+    let inFlight = false;
     const timer = setInterval(async () => {
-      const version = ++pollVersion.current;
+      if (inFlight) return;
+      inFlight = true;
+      const version = pollVersion.current;
       try {
         const fresh = await api(`/records/${record.id}`);
         if (!active || version !== pollVersion.current) return;
@@ -568,6 +571,8 @@ function App() {
           (e.status === 401 || e.code === "NETWORK_ERROR")
         )
           fail(e);
+      } finally {
+        inFlight = false;
       }
     }, 2200);
     return () => {
