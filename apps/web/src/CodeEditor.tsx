@@ -49,7 +49,7 @@ export default function CodeEditor({
         options: {
           isWholeLine: true,
           className: "trace-execution-line",
-          linesDecorationsClassName: "trace-execution-marker",
+          firstLineDecorationClassName: "trace-execution-marker",
         },
       },
     ]);
