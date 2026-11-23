@@ -1,6 +1,7 @@
 import { fleetConfig } from "./worker-fleet.js";
 import { topicQuizzes } from "./quiz-bank.js";
 import Fastify from "fastify";
+import { registerApiDocs } from "./api-docs.js";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
@@ -66,7 +67,7 @@ const source = z
   uuid = z.string().uuid();
 const codeInput = z.object({ language: z.enum(languages), source });
 const traceStep = z.object({
-  line: z.number().int().min(1),
+  line: z.number().int().positive().nullable().catch(null).default(null),
   event: z.string().max(20),
   locals: z.record(z.string().max(100), z.unknown()),
   stack: z.array(z.string().max(120)).max(32),
@@ -629,6 +630,18 @@ export async function createApp(c: Config) {
       return rows[0];
     });
   });
+  async function readExecution(executionId: string, userId: string) {
+    const { rows } = await c.db.query(
+      `SELECT e.*, s.language AS snapshot_language, s.source_hash AS snapshot_source_hash
+       FROM executions e JOIN code_snapshots s ON s.id=e.snapshot_id
+       JOIN records r ON r.id=e.record_id
+       WHERE e.id=$1 AND r.user_id=$2 AND r.expires_at>now()`,
+      [executionId, userId],
+    );
+    if (!rows[0])
+      throw new DomainError(404, "NOT_FOUND", "실행 결과를 찾을 수 없어요.");
+    return hydrate(c.storage, rows[0]);
+  }
   app.get("/api/records/:id", async (req: any) => {
     const r = await ownRecord(c.db, user(req), uuid.parse(req.params.id));
     const reviews = mvp
@@ -640,13 +653,9 @@ export async function createApp(c: Config) {
           )
         ).rows;
     const execution = r.latest_execution_id
-      ? (
-          await c.db.query("SELECT * FROM executions WHERE id=$1", [
-            r.latest_execution_id,
-          ])
-        ).rows[0]
+      ? await readExecution(r.latest_execution_id, user(req))
       : null;
-    return { ...r, reviews, execution: await hydrate(c.storage, execution) };
+    return { ...r, reviews, execution };
   });
   app.patch("/api/records/:id", async (req: any) => {
     const v = codeInput
@@ -698,18 +707,18 @@ export async function createApp(c: Config) {
           .optional(),
       })
       .parse(req.body);
-    return c.db.tx(async (db) => {
+    const executionId = await c.db.tx(async (db) => {
       await db.query("SELECT id FROM users WHERE id=$1 FOR UPDATE", [
         user(req),
       ]);
       const r = await ownRecord(db, user(req), uuid.parse(req.params.id));
       const exists = (
         await db.query(
-          "SELECT * FROM executions WHERE record_id=$1 AND request_key=$2",
+          "SELECT id FROM executions WHERE record_id=$1 AND request_key=$2",
           [r.id, v.requestKey],
         )
       ).rows[0];
-      if (exists) return exists;
+      if (exists) return exists.id;
       if (r.revision !== v.revision)
         throw new DomainError(
           409,
@@ -734,19 +743,13 @@ export async function createApp(c: Config) {
         "execution-request:" + run,
         { mode: v.mode, language: r.language, problem: r.problem_id },
       );
-      return (await db.query("SELECT * FROM executions WHERE id=$1", [run]))
-        .rows[0];
+      return run;
     });
+    return readExecution(executionId, user(req));
   });
-  app.get("/api/executions/:id", async (req: any) => {
-    const { rows } = await c.db.query(
-      "SELECT e.* FROM executions e JOIN records r ON r.id=e.record_id WHERE e.id=$1 AND r.user_id=$2 AND r.expires_at>now()",
-      [uuid.parse(req.params.id), user(req)],
-    );
-    if (!rows[0])
-      throw new DomainError(404, "NOT_FOUND", "실행 결과를 찾을 수 없어요.");
-    return hydrate(c.storage, rows[0]);
-  });
+  app.get("/api/executions/:id", async (req: any) =>
+    readExecution(uuid.parse(req.params.id), user(req)),
+  );
   app.get("/api/review-usage", async (req) => {
     const r = (
       await c.db.query(
@@ -1005,6 +1008,13 @@ export async function createApp(c: Config) {
             [e.snapshot_id],
           )
         ).rows[0];
+        const lineCount = info.source.split(/\r\n|\r|\n/).length;
+        for (const test of v.result.tests) {
+          for (const frame of test.trace ?? []) {
+            if (frame.line !== null && frame.line > lineCount)
+              frame.line = null;
+          }
+        }
         result = {
           ...v.result,
           analysis: analysis(
@@ -1035,5 +1045,6 @@ export async function createApp(c: Config) {
       return { accepted: true };
     });
   });
+  await registerApiDocs(app);
   return app;
 }

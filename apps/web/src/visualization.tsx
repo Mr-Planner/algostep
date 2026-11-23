@@ -10,33 +10,30 @@ import { AdvancedLesson } from "./AdvancedLesson.js";
 export function TraceViewer({
   trace,
   topic,
+  step,
+  setStep,
+  line,
+  sourceStatus,
   truncated = false,
 }: {
   trace: any[];
   topic: string;
+  step: number;
+  setStep: (step: number) => void;
+  line: number | null;
+  sourceStatus: "match" | "changed" | "unknown" | "pending";
   truncated?: boolean;
 }) {
-  const [step, setStep] = useState(0),
-    [playing, setPlaying] = useState(false);
-  useEffect(() => {
-    setStep(0);
-    setPlaying(false);
-  }, [trace]);
+  const [playing, setPlaying] = useState(false);
   useEffect(() => {
     if (!playing) return;
-    const t = setInterval(
-      () =>
-        setStep((s) => {
-          if (s >= trace.length - 1) {
-            setPlaying(false);
-            return s;
-          }
-          return s + 1;
-        }),
-      650,
-    );
-    return () => clearInterval(t);
-  }, [playing, trace]);
+    if (step >= trace.length - 1) {
+      setPlaying(false);
+      return;
+    }
+    const timer = setTimeout(() => setStep(step + 1), 650);
+    return () => clearTimeout(timer);
+  }, [playing, step, trace.length, setStep]);
   const current = trace[step],
     vars = current?.locals ?? {};
   return (
@@ -55,10 +52,27 @@ export function TraceViewer({
       ) : (
         <>
           <p className="muted">
-            {current.line}번째 줄 ·{" "}
-            {current.event === "line" ? "이 줄을 실행하기 직전" : current.event}{" "}
+            {line === null ? "줄 위치를 확인할 수 없어요" : `${line}번째 줄`} ·{" "}
+            {(
+              {
+                line: "실행 직전",
+                return: "반환 시점",
+                exception: "예외 발생 시점",
+              } as Record<string, string>
+            )[current.event] ?? current.event}{" "}
             {truncated && "· 수집 한도에 도달했어요"}
           </p>
+          {sourceStatus === "changed" && (
+            <p className="muted">
+              실행 후 코드가 변경됐어요. 현재 코드의 실행 줄을 보려면 다시
+              실행해 주세요.
+            </p>
+          )}
+          {sourceStatus === "unknown" && (
+            <p className="muted">
+              실행 당시 코드를 확인할 수 없어 줄 강조를 표시하지 않아요.
+            </p>
+          )}
           <Structure vars={vars} topic={topic} />
           <ObjectGraph vars={vars} />
           <p className="caption">
