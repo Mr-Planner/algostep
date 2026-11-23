@@ -590,8 +590,8 @@ test("worker result contract renders actual supplied trace and strict outputs", 
   await page.getByRole("button", { name: "이전 단계", exact: true }).click();
   await expectLine(8);
   await page
-    .locator(".monaco-editor .view-lines")
-    .click({ position: { x: 12, y: 8 } });
+    .locator(".editor-panel .monaco-editor")
+    .click({ position: { x: 150, y: 90 } });
   await page.keyboard.press("Home");
   await page.keyboard.press("Enter");
   await expect(marker).toHaveCount(0);
