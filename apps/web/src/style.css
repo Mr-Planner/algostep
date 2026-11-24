@@ -2321,11 +2321,47 @@ body:has(.mobile-navigation) footer {
 .monaco-editor .trace-execution-line {
   background: #dce4fb;
 }
-.monaco-editor .trace-execution-marker::before {
-  content: "▶";
-  color: var(--accent);
-  font-size: 11px;
-}
 [data-theme="dark"] .monaco-editor .trace-execution-line {
   background: #364b72;
+}
+
+.trace-array {
+  --compare-fill: #e0e9ff;
+  --after-fill: #d5f0e5;
+  --error-fill: #fae1e6;
+  --before-fill: #ffecc6;
+  --before-ink: #925900;
+}
+[data-theme="dark"] .trace-array {
+  --compare-fill: #243a68;
+  --after-fill: #1d4f47;
+  --error-fill: #562d3b;
+  --before-fill: #5c4b2a;
+  --before-ink: #ffcf7b;
+}
+.trace-array .node.active {
+  fill: var(--compare-fill);
+}
+.trace-array .node.visited {
+  fill: var(--after-fill);
+}
+.trace-array .node.pending-change {
+  fill: var(--before-fill);
+  stroke: var(--before-ink);
+}
+.trace-array .node.incorrect {
+  fill: var(--error-fill);
+  stroke: var(--danger);
+}
+.trace-array .node.active + text {
+  fill: var(--text);
+}
+.trace-array .diagram-legend .before-key {
+  color: var(--before-ink);
+}
+.trace-array .diagram-legend .after-key {
+  color: var(--success);
+}
+.trace-array .diagram-legend .error-key {
+  color: var(--danger);
 }

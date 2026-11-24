@@ -551,7 +551,7 @@ test("worker result contract renders actual supplied trace and strict outputs", 
   await expect(
     page.getByRole("img", { name: "그래프의 현재 방문 상태" }),
   ).toBeVisible();
-  const marker = page.locator(".monaco-editor .trace-execution-marker");
+  const highlight = page.locator(".monaco-editor .trace-execution-line");
   async function expectLine(line: number) {
     await expect(
       page.getByText(`${line}번째 줄 · 실행 직전`, { exact: true }),
@@ -559,12 +559,12 @@ test("worker result contract renders actual supplied trace and strict outputs", 
     const number = page
       .locator(".monaco-editor .line-numbers")
       .filter({ hasText: new RegExp(`^${line}$`) });
-    await expect(marker).toHaveCount(1);
+    await expect(highlight.first()).toBeVisible();
     await expect
       .poll(async () => {
-        const a = await marker.boundingBox();
+        const a = await highlight.first().boundingBox();
         const b = await number.boundingBox();
-        return a && b ? Math.abs(a.y - b.y) : null;
+        return a && b ? Math.abs(a.y - b.y) : Infinity;
       })
       .toBeLessThan(2);
   }
@@ -575,12 +575,12 @@ test("worker result contract renders actual supplied trace and strict outputs", 
   const chooseTest = page.getByLabel("표시할 테스트");
   await chooseTest.selectOption("1");
   await expect(page.getByText("1 / 2 단계")).toBeVisible();
-  await expect(marker).toHaveCount(1);
+  await expect(highlight.first()).toBeVisible();
   await page.getByRole("button", { name: "재생", exact: true }).click();
   await expect(
     page.getByText(/줄 위치를 확인할 수 없어요 · 예외 발생 시점/),
   ).toBeVisible();
-  await expect(marker).toHaveCount(0);
+  await expect(highlight).toHaveCount(0);
   await chooseTest.selectOption("0");
   await expectLine(8);
   await page.getByRole("slider", { name: "실행 단계" }).focus();
@@ -594,12 +594,12 @@ test("worker result contract renders actual supplied trace and strict outputs", 
     .click({ position: { x: 150, y: 90 } });
   await page.keyboard.press("Home");
   await page.keyboard.press("Enter");
-  await expect(marker).toHaveCount(0);
+  await expect(highlight).toHaveCount(0);
   await expect(page.getByText(/실행 후 코드가 변경됐어요/)).toBeVisible();
   await page.keyboard.press("ControlOrMeta+z");
   await expectLine(8);
   await page.getByRole("button", { name: "Python 3.10" }).click();
-  await expect(marker).toHaveCount(0);
+  await expect(highlight).toHaveCount(0);
   await expect(page.getByText(/실행 후 코드가 변경됐어요/)).toBeVisible();
   await page.getByRole("button", { name: "Java 21" }).click();
   await expectLine(8);

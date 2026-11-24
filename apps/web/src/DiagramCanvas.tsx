@@ -1,8 +1,15 @@
 import { track } from "./analytics.js";
 import { ChevronDown } from "lucide-react";
-import React, { useEffect, useId, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 export type DiagramNode = {
   id: string;
+  motionKey?: string;
   x: number;
   y: number;
   label: string;
@@ -56,16 +63,66 @@ export function graphPositions(graph: number[][]) {
   }
   return positions;
 }
+// Slot coordinates include the user's layout and drag adjustments. A moving
+// card keeps its React key when its value moves to another slot.
+function NodeGroup({
+  node,
+  ...props
+}: React.SVGProps<SVGGElement> & { node: DiagramNode }) {
+  const ref = useRef<SVGGElement>(null);
+  const last = useRef(node);
+  const motion = useRef<Animation | null>(null);
+  useLayoutEffect(() => {
+    const from = last.current;
+    last.current = node;
+    if (!node.motionKey || !ref.current) return;
+    if (from.id === node.id && from.x === node.x && from.y === node.y) return;
+    let { x, y } = from;
+    if (motion.current?.playState === "running") {
+      const matrix = new DOMMatrixReadOnly(
+        getComputedStyle(ref.current).transform,
+      );
+      x = matrix.e;
+      y = matrix.f;
+    }
+    motion.current?.cancel();
+    if (
+      from.id === node.id ||
+      matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    const dx = node.x - x,
+      dy = node.y - y;
+    const bend = Math.min(0.35, 42 / (Math.hypot(dx, dy) || 1));
+    const translate = (x: number, y: number) => ({
+      transform: `translate(${x}px, ${y}px)`,
+    });
+    motion.current = ref.current.animate(
+      [
+        translate(x, y),
+        translate(x + dx / 2 - dy * bend, y + dy / 2 + dx * bend),
+        translate(node.x, node.y),
+      ],
+      { duration: 480, easing: "ease-in-out" },
+    );
+  }, [node]);
+  return (
+    <g {...props} ref={ref} transform={`translate(${node.x} ${node.y})`} />
+  );
+}
+
 export function DiagramCanvas({
   nodes,
   edges = [],
   label,
+  legend,
   responsiveFit = true,
   onSelect,
 }: {
   nodes: DiagramNode[];
   edges?: DiagramEdge[];
   label: string;
+  legend?: React.ReactNode;
   responsiveFit?: boolean;
   onSelect?: (id: string) => void;
 }) {
@@ -290,8 +347,9 @@ export function DiagramCanvas({
             );
           })}
           {positioned.map((n) => (
-            <g
-              key={n.id}
+            <NodeGroup
+              key={n.motionKey ?? n.id}
+              node={n}
               className="diagram-node"
               role="button"
               tabIndex={0}
@@ -307,7 +365,6 @@ export function DiagramCanvas({
                 )
                   onSelect(n.id);
               }}
-              transform={`translate(${n.x} ${n.y})`}
               data-node-id={n.id}
               onPointerDown={(e) => {
                 pointerStart.current = { x: e.clientX, y: e.clientY };
@@ -422,13 +479,17 @@ export function DiagramCanvas({
                     : n.detail}
                 </text>
               )}
-            </g>
+            </NodeGroup>
           ))}
         </svg>
       </div>
       <div className="diagram-legend">
-        <span>● 현재/비교 중</span>
-        <span>● 방문/결과</span>
+        {legend ?? (
+          <>
+            <span>● 현재/비교 중</span>
+            <span>● 방문/결과</span>
+          </>
+        )}
         <span>드래그는 그림 배치만 바꾸며 알고리즘 데이터는 유지돼요.</span>
       </div>
     </div>

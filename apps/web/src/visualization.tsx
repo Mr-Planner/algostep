@@ -7,12 +7,22 @@ import { ObjectGraph } from "./ObjectGraph.js";
 import { lessonFrames } from "./lesson-model.js";
 import { advancedTopics } from "./advanced-lessons.js";
 import { AdvancedLesson } from "./AdvancedLesson.js";
+type Output = { verdict: string; actual: string; expected: string | null };
+type ArrayStep = {
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  sourceLine?: string;
+  finalOutput?: Output;
+};
+
 export function TraceViewer({
   trace,
   topic,
   step,
   setStep,
   line,
+  sourceLine,
+  test,
   sourceStatus,
   truncated = false,
 }: {
@@ -21,6 +31,8 @@ export function TraceViewer({
   step: number;
   setStep: (step: number) => void;
   line: number | null;
+  sourceLine?: string;
+  test?: Output;
   sourceStatus: "match" | "changed" | "unknown" | "pending";
   truncated?: boolean;
 }) {
@@ -77,7 +89,17 @@ export function TraceViewer({
               실행 당시 코드를 확인할 수 없어 줄 강조를 표시하지 않아요.
             </p>
           )}
-          <Structure vars={vars} topic={topic} />
+          <Structure
+            vars={vars}
+            topic={topic}
+            arrayStep={{
+              before: trace[step - 1]?.locals,
+              after: trace[step + 1]?.locals,
+              sourceLine,
+              finalOutput:
+                !truncated && step === trace.length - 1 ? test : undefined,
+            }}
+          />
           <ObjectGraph vars={vars} />
           <details className="trace-state" open>
             <summary>변수 · 호출 스택</summary>
@@ -158,7 +180,15 @@ export function TraceViewer({
     </div>
   );
 }
-export function Structure({ vars, topic }: { vars: any; topic: string }) {
+export function Structure({
+  vars,
+  topic,
+  arrayStep,
+}: {
+  vars: any;
+  topic: string;
+  arrayStep?: ArrayStep;
+}) {
   const matrix = topic === "graph-matrix" ? vars.matrix : vars.buckets;
   if (Array.isArray(matrix))
     return (
@@ -308,24 +338,91 @@ export function Structure({ vars, topic }: { vars: any; topic: string }) {
         : null;
   if (a?.length === 0 && Object.values(vars).some((v: any) => v?.$id))
     return null;
-  if (a)
+  if (a) {
+    const arrayName = arrays.find(([, value]) => value === a)?.[0];
+    const before =
+      arrayStep && arrayName ? arrayStep.before?.[arrayName] : undefined;
+    const after =
+      arrayStep && arrayName ? arrayStep.after?.[arrayName] : undefined;
+    const bubble = topic === "bubble-sort";
+    const comparing =
+      bubble &&
+      arrayName === "a" &&
+      Number.isInteger(vars.j) &&
+      /\ba\s*\[\s*j\s*\]\s*>\s*a\s*\[\s*j\s*\+\s*1\s*\]/.test(
+        arrayStep?.sourceLine ?? "",
+      );
+    const output = bubble ? arrayStep?.finalOutput : undefined;
+    const expected = output?.expected?.trim().split(/\s+/);
+    const isOutput =
+      output && a.join(" ") === output.actual.trim().split(/\s+/).join(" ");
+
+    function cell(i: number, value: unknown) {
+      if (isOutput && output.verdict === "AC")
+        return { state: "visited", note: "정답" };
+      if (
+        isOutput &&
+        output.verdict === "WA" &&
+        expected &&
+        String(value) !== expected[i]
+      )
+        return { state: "incorrect", note: "오답" };
+      if (typeof value === "number" || typeof value === "string") {
+        if (Array.isArray(before) && i < before.length && before[i] !== value)
+          return {
+            state: "visited",
+            note: "변경 후",
+          };
+        if (Array.isArray(after) && i < after.length && after[i] !== value)
+          return { state: "pending-change", note: "변경 전" };
+      }
+      if (comparing && (i === vars.j || i === vars.j + 1))
+        return { state: "active", note: "비교 중" };
+      return {
+        state: i === vars.mid ? "active" : i === vars.answer ? "visited" : "",
+        note: "",
+      };
+    }
+    const occurrences = new Map<string | number, number>();
     return (
-      <div className="array-board">
+      <div className={arrayStep ? "array-board trace-array" : "array-board"}>
         <DiagramCanvas
           key={topic}
           label="배열 인덱스와 포인터"
-          nodes={a.slice(0, 30).map((v: any, i: number) => ({
-            id: String(i),
-            x: 75 + (i % 6) * 120,
-            y: 65 + Math.floor(i / 6) * 110,
-            label: typeof v === "object" ? JSON.stringify(v) : String(v),
-            detail: `[${i}] ${i === vars.left ? "L " : ""}${i === vars.right ? "R " : ""}${i === vars.mid ? "mid" : ""}`,
-            shape: "card" as const,
-            width: 100,
-            height: 68,
-            state:
-              i === vars.mid ? "active" : i === vars.answer ? "visited" : "",
-          }))}
+          legend={
+            arrayStep && (
+              <>
+                <span className="compare-key">● 비교 중</span>
+                <span className="before-key">● 변경 전</span>
+                <span className="after-key">
+                  ● 변경 후{bubble && " · 정답"}
+                </span>
+                {bubble && <span className="error-key">● 오답</span>}
+              </>
+            )
+          }
+          nodes={a.slice(0, 30).map((v: any, i: number) => {
+            const { state, note } = cell(i, v);
+            let motionKey: string | undefined;
+            if (arrayStep && (typeof v === "number" || typeof v === "string")) {
+              // Stable sorts preserve the relative order of equal values.
+              const occurrence = occurrences.get(v) ?? 0;
+              occurrences.set(v, occurrence + 1);
+              motionKey = JSON.stringify([arrayName, v, occurrence]);
+            }
+            return {
+              id: String(i),
+              motionKey,
+              x: 75 + (i % 6) * 120,
+              y: (arrayStep ? 80 : 65) + Math.floor(i / 6) * 110,
+              label: typeof v === "object" ? JSON.stringify(v) : String(v),
+              detail: `[${i}] ${i === vars.left ? "L " : ""}${i === vars.right ? "R " : ""}${i === vars.mid ? "mid" : ""}${note}`,
+              shape: "card" as const,
+              width: 100,
+              height: 68,
+              state,
+            };
+          })}
         />
         {a.length === 0 && <p>비어 있는 구조예요.</p>}
         {a.length > 30 && (
@@ -333,6 +430,7 @@ export function Structure({ vars, topic }: { vars: any; topic: string }) {
         )}
       </div>
     );
+  }
   return (
     <p className="muted">
       구조를 자동으로 식별할 수 없는 단계예요. 아래 변수와 호출 스택을
