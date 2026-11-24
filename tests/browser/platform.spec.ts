@@ -161,23 +161,28 @@ test("expanded quizzes and movable diagrams retain positions across steps", asyn
   const node = page.locator('.diagram-node[data-node-id="0"]').first();
   await node.scrollIntoViewIfNeeded();
   const original = await node.getAttribute("transform");
+  await page.getByLabel("그래프의 현재 방문 상태 배치").selectOption("grid");
+  const firstSlot = await node.getAttribute("transform");
+  const nextNode = page.locator('.diagram-node[data-node-id="1"]').first();
+  const secondSlot = await nextNode.getAttribute("transform");
   const box = await node.boundingBox();
+  const target = await nextNode.boundingBox();
   expect(box).not.toBeNull();
+  expect(target).not.toBeNull();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await page.mouse.down();
   await page.mouse.move(
-    box!.x + box!.width / 2 + 60,
-    box!.y + box!.height / 2 + 30,
+    target!.x + target!.width / 2,
+    target!.y + target!.height / 2,
     { steps: 5 },
   );
+  await expect(node).toHaveClass(/dragging/);
+  await expect(nextNode).toHaveAttribute("transform", firstSlot!);
   await page.mouse.up();
-  const moved = await node.getAttribute("transform");
-  expect(moved).not.toBe(original);
   await page.getByRole("button", { name: "다음 단계", exact: true }).click();
-  await expect(node).toHaveAttribute("transform", moved!);
-  await node.focus();
-  await node.press("ArrowRight");
-  expect(await node.getAttribute("transform")).not.toBe(moved);
+  await expect(node).toHaveAttribute("transform", secondSlot!);
+  await node.press("ArrowLeft");
+  await expect(node).toHaveAttribute("transform", firstSlot!);
   await page.getByRole("button", { name: "배치 초기화", exact: true }).click();
   await expect(node).toHaveAttribute("transform", original!);
   await page.getByLabel("예제 선택", { exact: true }).selectOption("2");

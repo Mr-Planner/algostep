@@ -389,6 +389,7 @@ export function Structure({
         <DiagramCanvas
           key={topic}
           label="배열 인덱스와 포인터"
+          arrayLayout
           legend={
             arrayStep && (
               <>

@@ -1433,9 +1433,21 @@ summary {
 .diagram-node:active {
   cursor: grabbing;
 }
-.diagram-node:focus .node {
+.diagram-node:focus .node,
+.diagram-node.dragging .node {
   stroke: var(--accent);
   stroke-width: 4;
+}
+.diagram-node.dragging {
+  cursor: grabbing;
+  filter: drop-shadow(0 4px 8px rgb(0 0 0 / 18%));
+}
+.diagram-drop-slot {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  pointer-events: none;
 }
 .diagram-node text {
   pointer-events: none;
