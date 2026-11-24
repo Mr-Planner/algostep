@@ -40,9 +40,7 @@ export function TraceViewer({
     <div className="trace">
       <div className="section-heading">
         <h3>실행 시각화</h3>
-        <span className="badge">
-          {current ? `${step + 1} / ${trace.length} 단계` : "실행 데이터 없음"}
-        </span>
+        {!current && <span className="badge">실행 데이터 없음</span>}
       </div>
       {!current ? (
         <p className="muted">
@@ -51,17 +49,23 @@ export function TraceViewer({
         </p>
       ) : (
         <>
-          <p className="muted">
-            {line === null ? "줄 위치를 확인할 수 없어요" : `${line}번째 줄`} ·{" "}
-            {(
-              {
-                line: "실행 직전",
-                return: "반환 시점",
-                exception: "예외 발생 시점",
-              } as Record<string, string>
-            )[current.event] ?? current.event}{" "}
-            {truncated && "· 수집 한도에 도달했어요"}
-          </p>
+          <div className="trace-step">
+            <strong>
+              {step + 1} / {trace.length} 단계
+            </strong>
+            <p className="muted">
+              {line === null ? "줄 위치를 확인할 수 없어요" : `${line}번째 줄`}{" "}
+              ·{" "}
+              {(
+                {
+                  line: "실행 직전",
+                  return: "반환 시점",
+                  exception: "예외 발생 시점",
+                } as Record<string, string>
+              )[current.event] ?? current.event}{" "}
+              {truncated && "· 수집 한도에 도달했어요"}
+            </p>
+          </div>
           {sourceStatus === "changed" && (
             <p className="muted">
               실행 후 코드가 변경됐어요. 현재 코드의 실행 줄을 보려면 다시
@@ -75,23 +79,42 @@ export function TraceViewer({
           )}
           <Structure vars={vars} topic={topic} />
           <ObjectGraph vars={vars} />
-          <p className="caption">
-            시각화는 같은 입력으로 별도 실행한 추적이에요. 난수·현재 시각에
-            의존하는 코드는 채점 실행과 흐름이 다를 수 있어요.
-          </p>
+          <details className="trace-state" open>
+            <summary>변수 · 호출 스택</summary>
+            <div className="variables">
+              {Object.entries(vars)
+                .filter(([k]) => !["__builtins__"].includes(k))
+                .map(([k, v]) => (
+                  <div key={k}>
+                    <code>{k}</code>
+                    <code>{JSON.stringify(v)}</code>
+                  </div>
+                ))}
+            </div>
+            <p className="muted">{current.stack?.join(" ← ")}</p>
+          </details>
           <div className="playback">
             <button
               className="secondary"
-              aria-label="이전 단계"
               onClick={() => {
                 setPlaying(false);
                 track("VISUALIZATION_CONTROL", { action: "previous", step });
                 setStep(Math.max(0, step - 1));
               }}
             >
-              이전
+              이전 단계
             </button>
             <button
+              onClick={() => {
+                setPlaying(false);
+                track("VISUALIZATION_CONTROL", { action: "next", step });
+                setStep(Math.min(trace.length - 1, step + 1));
+              }}
+            >
+              다음 단계
+            </button>
+            <button
+              className="secondary"
               onClick={() => {
                 track("VISUALIZATION_CONTROL", {
                   action: playing ? "pause" : "play",
@@ -100,18 +123,13 @@ export function TraceViewer({
                 setPlaying(!playing);
               }}
             >
-              {playing ? "일시 정지" : "재생"}
-            </button>
-            <button
-              className="secondary"
-              aria-label="다음 단계"
-              onClick={() => {
-                setPlaying(false);
-                track("VISUALIZATION_CONTROL", { action: "next", step });
-                setStep(Math.min(trace.length - 1, step + 1));
-              }}
-            >
-              다음
+              {playing ? (
+                "일시 정지"
+              ) : (
+                <>
+                  재생 <span aria-hidden="true">· 1×</span>
+                </>
+              )}
             </button>
             <input
               aria-label="실행 단계"
@@ -131,20 +149,10 @@ export function TraceViewer({
               }}
             />
           </div>
-          <details open>
-            <summary>변수 · 호출 스택</summary>
-            <div className="variables">
-              {Object.entries(vars)
-                .filter(([k]) => !["__builtins__"].includes(k))
-                .map(([k, v]) => (
-                  <div key={k}>
-                    <code>{k}</code>
-                    <code>{JSON.stringify(v)}</code>
-                  </div>
-                ))}
-            </div>
-            <p className="muted">{current.stack?.join(" ← ")}</p>
-          </details>
+          <p className="caption">
+            시각화는 같은 입력으로 별도 실행한 추적이에요. 난수·현재 시각에
+            의존하는 코드는 채점 실행과 흐름이 다를 수 있어요.
+          </p>
         </>
       )}
     </div>
